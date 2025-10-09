@@ -9,8 +9,8 @@ import joblib
 # Estimate severity per Adverse Event Report - Using basic Random Forest Model - Need to update weights for serverity calc
 
 # --- Paths ---
-DATA_DIR = Path(__file__).resolve().parent / "data"
-DATA_PATH = DATA_DIR / "synthetic_reports.csv"
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DATA_PATH = DATA_DIR / "faers_sampled_dataset_20k_set2.csv"
 
 
 class AICaseSeverityClassifier:
@@ -19,27 +19,26 @@ class AICaseSeverityClassifier:
         self.model = None
         self.label_encoders = {}
         self.scaler = StandardScaler()
-        self.cat_features = ["sex", "drug_name", "indication", "adverse_event"]
+        self.cat_features = ["SEX", "drugname", "indi_pt", "pt"]
         self.num_features = ["age"]
+        self.target_col = "outc_cod"
 
     # Data Loading
     def load_data(self):
         """Load the dataset from CSV"""
         if not DATA_PATH.exists():
             raise FileNotFoundError(f"Data file not found: {DATA_PATH}")
-        df = pd.read_csv(DATA_PATH, parse_dates=["date_reported"])
+        df = pd.read_csv(DATA_PATH, parse_dates=["fda_dt"])
         return df
 
     # Preprocessing
     def _create_target(self, df):
         """Create binary target variable"""
-        severity_score = df["outcome"].str.lower().map(
-            {"fatal": 3, "hospitalized": 2, "not recovered": 1}
-        ).fillna(0) + df["adverse_event"].str.lower().map(
-            {"seizure": 2, "liver toxicity": 3, "anaphylaxis": 3}
-        ).fillna(0)
+        outc_cod_map = {"DE": 3, "LT": 2, "HO": 2, "DS": 1, "CA": 2, "OT": 1}
+        pt_map = {"Anaphylactic reaction": 3, "Seizure": 2, "Liver toxicity": 3, "Overdose": 3, "Injury": 2, "Dizziness": 1}
+        severity_score = df[self.target_col].map(outc_cod_map).fillna(0) + df["pt"].map(pt_map).fillna(0)
         df = df.assign(severity_score=severity_score)
-        df["is_signal"] = (df["severity_score"] > 1).astype(int)
+        df["is_alert"] = (df["severity_score"] > 1).astype(int)
         return df
 
     def fit_preprocess(self, df):
@@ -47,7 +46,7 @@ class AICaseSeverityClassifier:
         df = self._create_target(df)
 
         X = df[self.cat_features + self.num_features].copy()
-        y = df["is_signal"]
+        y = df["is_alert"]
 
         # Fit encoders
         for col in self.cat_features:
@@ -63,7 +62,7 @@ class AICaseSeverityClassifier:
     def transform_preprocess(self, df):
         """Preprocess data for inference (use fitted encoders & scaler)"""
         X = df[self.cat_features + self.num_features].copy()
-
+ 
         # Transform categories (handle unseen labels safely)
         for col in self.cat_features:
             le = self.label_encoders[col]
@@ -109,7 +108,7 @@ class AICaseSeverityClassifier:
         prediction = self.model.predict(X)
         probability = self.model.predict_proba(X)[0][1]
 
-        return {"is_signal": bool(prediction[0]), "probability": float(probability)}
+        return {"is_alert": bool(prediction[0]), "alert_probability": float(probability)}
 
     # Persistence
     def save_model(self):
@@ -142,11 +141,11 @@ if __name__ == "__main__":
         detector.train_model()
 
     sample_input = {
-        "sex": "M",
+        "SEX": "M",
         "age": 45,
-        "drug_name": "Atorvastatin", # Aspirin
-        "indication": "Headache",
-        "adverse_event": "Liver toxicity", # Anaphylaxisamper@123.
+        "drugname": "Atorvastatin", # Aspirin
+        "indi_pt": "Headache",
+        "pt": "Liver toxicity", # Anaphylaxis
         
     }
     result = detector.predict(sample_input)

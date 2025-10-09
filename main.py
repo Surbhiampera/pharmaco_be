@@ -4,11 +4,16 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from pathlib import Path
-from ai_signal_detector import AISignalDetector
+from ml.report_severity_model import AICaseSeverityClassifier
 from pydantic import BaseModel
 
 # Initialize once
-detector = AISignalDetector()
+detector = AICaseSeverityClassifier()
+if not detector.model_path.exists():
+    detector.train_model()
+else:
+    detector.load_model()
+
 
 class SignalRequest(BaseModel):
     sex:str

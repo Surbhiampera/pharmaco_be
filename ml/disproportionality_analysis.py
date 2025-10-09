@@ -1,5 +1,6 @@
+
 import pandas as pd
-from testing.report_severity_model import AICaseSeverityClassifier
+from ml.report_severity_model import AICaseSeverityClassifier
 
 # Simple aggregation of reports
 detector = AICaseSeverityClassifier()
@@ -9,13 +10,13 @@ else:
     detector.load_model()
 
 
-class SignalAggregator:
+class AlertAggregator:
     def __init__(self):
         self.reports = []
 
     def add_report(self, case, prediction):
         """Store triaged case with model prediction"""
-        if prediction["is_signal"]:
+        if prediction["is_alert"]:
             self.reports.append({**case, **prediction})
 
     def aggregate_signals(self):
@@ -24,18 +25,18 @@ class SignalAggregator:
         if df.empty:
             return pd.DataFrame()
         agg = (
-            df.groupby(["drug_name", "adverse_event"])
-            .agg(count=("is_signal", "sum"), avg_prob=("probability", "mean"))
+            df.groupby(["drugname", "pt"])
+            .agg(count=("is_alert", "sum"), avg_prob=("alert_probability", "mean"))
             .reset_index()
         )
         return agg
 
-    def compute_prr(self, df, drug_name, event):
+    def compute_prr(self, df, drugname, pt):
         """Compute PRR for a drug-event pair"""
-        a = len(df[(df["drug_name"] == drug_name) & (df["adverse_event"] == event)])
-        b = len(df[(df["drug_name"] == drug_name) & (df["adverse_event"] != event)])
-        c = len(df[(df["drug_name"] != drug_name) & (df["adverse_event"] == event)])
-        d = len(df[(df["drug_name"] != drug_name) & (df["adverse_event"] != event)])
+        a = len(df[(df["drugname"] == drugname) & (df["pt"] == pt)])
+        b = len(df[(df["drugname"] == drugname) & (df["pt"] != pt)])
+        c = len(df[(df["drugname"] != drugname) & (df["pt"] == pt)])
+        d = len(df[(df["drugname"] != drugname) & (df["pt"] != pt)])
 
         prr = (a / (a + b)) / (c / (c + d)) if (a + b) > 0 and (c + d) > 0 else None
         return prr
@@ -54,12 +55,12 @@ class SignalAggregator:
 
         if use_prr:
             agg["PRR"] = agg.apply(
-                lambda row: self.compute_prr(df, row["drug_name"], row["adverse_event"]),
+                lambda row: self.compute_prr(df, row["drugname"], row["pt"]),
                 axis=1,
             )
             ranked = agg.sort_values("PRR", ascending=False)
         else:
-            # Risk Score = signal count × avg probability
+            # Risk Score = alert count × avg probability
             agg["risk_score"] = agg["count"] * agg["avg_prob"]
             ranked = agg.sort_values("risk_score", ascending=False)
 
