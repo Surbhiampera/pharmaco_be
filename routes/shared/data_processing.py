@@ -200,11 +200,24 @@ def severity_score(series: pd.Series) -> pd.Series:
 
 
 def jsonify_df(df: pd.DataFrame, orient: str = "records") -> List[Dict[str, Any]]:
-    """Ensure JSON serializable (convert Timestamps and numpy types)."""
+    """Ensure JSON serializable (handle datetime + pandas/numpy dtypes safely)."""
+    
     converted = df.copy()
+
     for col in converted.columns:
-        if np.issubdtype(converted[col].dtype, np.datetime64):
-            converted[col] = (
-                converted[col].astype("datetime64[ns]").dt.strftime("%Y-%m-%d")
-            )
+        # ✅ Fix: use pandas-safe dtype check
+        if pd.api.types.is_datetime64_any_dtype(converted[col]):
+            converted[col] = converted[col].dt.strftime("%Y-%m-%d")
+
+        # Optional but recommended safety handling 👇
+        elif pd.api.types.is_numeric_dtype(converted[col]):
+            converted[col] = converted[col].replace({np.nan: None})
+
+        elif pd.api.types.is_string_dtype(converted[col]):
+            converted[col] = converted[col].fillna("")
+
+        else:
+            # fallback for mixed/object types
+            converted[col] = converted[col].astype(str)
+
     return converted.to_dict(orient=orient)
